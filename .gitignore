@@ -43,3 +43,6 @@ pip-log.txt
 # Misc
 *.sqlite3
 *.db
+
+#README
+README.md

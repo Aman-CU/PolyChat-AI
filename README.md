@@ -1,9 +1,9 @@
-<<<<<<< HEAD
-#PolyChat AI
+
+###PolyChat AI
 
 PolyChat AI is a modern, provider‑agnostic chat interface that brings together the best LLMs behind a clean, responsive UI. It supports streaming chat, model routing, and friendly error handling across OpenAI, Google Gemini, Anthropic (Claude), DeepSeek, and OpenRouter (including free and paid model pools). Built with Next.js (client) and FastAPI (server), PolyChat emphasizes developer ergonomics, a delightful UX, and extensibility.
 
-#Highlights
+###Highlights
 
 Provider‑agnostic core: OpenAI, Gemini, Anthropic, DeepSeek, and OpenRouter support out of the box.
 Streaming UX: Smooth SSE token streaming with graceful non‑stream fallbacks for tricky providers.
@@ -12,13 +12,13 @@ Free vs Paid: Separate lists for OpenRouter free and paid models; clearly catego
 Friendly errors: Human‑readable messages for 400/401/402/429; useful provider details when appropriate.
 Modern UI: Beautiful Next.js client with a subtle “Thinking…” indicator and clean model picker UX.
 
-#Tech stack
+###Tech stack
 
 Client: Next.js 15, TypeScript, Tailwind, shadcn/ui (custom components)
 Server: FastAPI (Python), httpx, Pydantic (v2), Pydantic‑Settings
 Protocols: SSE for streaming; OpenAI‑compatible request/response shapes
 
-#Use cases
+###Use cases
 
 Unified chat experience across multiple model providers
 Rapid prototyping of AI assistants with reliable streaming and error handling
@@ -28,7 +28,7 @@ Exploring free and paid model options via OpenRouter without provider lock‑in
 =======
 ## PolyChat
 
-Multi‑provider LLM chat app (t3.chat‑style) with a Next.js client and Python/FastAPI server in a single repo. Secure, fast streaming, and minimal ops.
+Multi‑provider LLM chat app with a Next.js client and Python/FastAPI server in a single repo. Secure, fast streaming, and minimal ops.
 
 ### Features
 - **Multi‑provider models**: OpenAI, Anthropic, Google, OpenRouter, DeepSeek (extensible)

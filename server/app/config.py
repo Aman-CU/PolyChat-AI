@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     openrouter_http_referer: Optional[str] = None
     openrouter_app_title: Optional[str] = None
 
+    # Enable in-memory storage (no DB). For demos only.
+    memory_mode: bool = False
+
     # pydantic-settings v2 style config: load env from both ../.env (repo root) and .env
     model_config = SettingsConfigDict(
         env_prefix="",

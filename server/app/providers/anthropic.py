@@ -66,7 +66,7 @@ class AnthropicProvider:
         backoff = 0.8
         for attempt in range(1, max_attempts + 1):
             try:
-                timeout = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
+                timeout = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
                 async with httpx.AsyncClient(timeout=timeout, trust_env=True) as client:
                     async with client.stream("POST", url, headers=headers, json=payload) as resp:
                         resp.raise_for_status()

@@ -9,7 +9,7 @@ class Message(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    conversationId: Optional[str] = None
+    conversationId: Optional[int | str] = None
     model: str
     messages: List[Message]
     temperature: Optional[float] = 0.7

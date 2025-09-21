@@ -22,6 +22,8 @@ export default function Composer({
   models,
   selectedModel,
   setSelectedModel,
+  disabled = false,
+  disabledMessage,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -31,6 +33,8 @@ export default function Composer({
   models: ModelsMap;
   selectedModel: string;
   setSelectedModel: (v: string) => void;
+  disabled?: boolean;
+  disabledMessage?: string;
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
 
@@ -52,14 +56,15 @@ export default function Composer({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             rows={1}
-            placeholder="Type your message here..."
+            placeholder={disabled ? (disabledMessage || "Sign in to continue...") : "Type your message here..."}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (!disabled && e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 onSend();
               }
             }}
-            className="w-full resize-none bg-transparent outline-none px-2 py-2 text-[15px] text-foreground placeholder:text-muted-foreground"
+            readOnly={disabled}
+            className={`w-full resize-none bg-transparent outline-none px-2 py-2 text-[15px] text-foreground placeholder:text-muted-foreground ${disabled ? "opacity-60" : ""}`}
           />
         </div>
 
@@ -110,7 +115,7 @@ export default function Composer({
             {!loading ? (
               <Button
                 onClick={onSend}
-                disabled={!value.trim()}
+                disabled={disabled || !value.trim()}
                 aria-label="Send"
                 className="h-14 w-14 rounded-md p-0 bg-primary/30 hover:bg-primary/40 disabled:opacity-50 backdrop-blur-xl shadow-md"
               >

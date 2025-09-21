@@ -110,9 +110,10 @@ class OpenRouterProvider:
         backoff = 0.8
         for attempt in range(1, max_attempts + 1):
             try:
-                timeout = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
+                timeout = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
                 async with httpx.AsyncClient(timeout=timeout, trust_env=True) as client:
                     emitted_any = False
+                    saw_rate_limit = False
                     async with client.stream("POST", url, headers=headers, json=payload) as resp:
                         resp.raise_for_status()
                         surfaced_model = False
@@ -122,11 +123,14 @@ class OpenRouterProvider:
                             if line.startswith("data: "):
                                 data = line[len("data: "):]
                                 if data.strip() == "[DONE]":
-                                    # If the stream ended without emitting content, try non-stream fallback
-                                    if not emitted_any:
+                                    # If the stream ended without emitting content (or hit rate limit), try non-stream fallback once
+                                    if not emitted_any or saw_rate_limit:
                                         try:
                                             non_stream_payload = dict(payload)
                                             non_stream_payload["stream"] = False
+                                            # small jitter to avoid hammering free pool
+                                            import asyncio, random
+                                            await asyncio.sleep(0.5 + random.random() * 0.6)
                                             r2 = await client.post(url, headers=headers, json=non_stream_payload)
                                             r2.raise_for_status()
                                             obj2 = r2.json()
@@ -159,6 +163,15 @@ class OpenRouterProvider:
                                         # Some providers send message.content even in stream
                                         if not content:
                                             content = (ch0.get("message") or {}).get("content")
+                                    # Detect in-band rate limit or error structures
+                                    if not content and isinstance(obj, dict):
+                                        err = obj.get("error") or obj.get("errors")
+                                        if err:
+                                            saw_rate_limit = True
+                                    if isinstance(content, str):
+                                        # Some free-pool responses may send a human-readable 429 note as content
+                                        if "Too many requests" in content or "rate limit" in content.lower():
+                                            saw_rate_limit = True
                                     if content:
                                         emitted_any = True
                                         yield "data: " + json.dumps({"content": content}) + "\n\n"

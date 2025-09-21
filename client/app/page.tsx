@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useSession, signIn } from "next-auth/react";
 import Composer from "../components/Composer";
 import ThinkingIndicator from "../components/ThinkingIndicator";
 import { Button } from "../components/ui/button";
@@ -17,6 +19,7 @@ type Message = { role: "user" | "assistant" | "system"; content: string };
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
 export default function HomePage() {
+  const { data: session } = useSession();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -25,8 +28,26 @@ export default function HomePage() {
   const [selectedModel, setSelectedModel] = useState<string>("gpt-4o-mini");
   const listRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const [conversationId, setConversationId] = useState<number | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // Used to ignore URL-driven history loads while we're actively syncing URL during a stream
+  const suppressUrlLoadRef = useRef(false);
+  // Ensure client-only logic (like localStorage) does not cause hydration mismatch
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
-  const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading]);
+  // Guest message limit (3 messages) enforcement
+  const guestCount = useMemo(() => {
+    if (!hydrated || typeof window === "undefined") return 0;
+    const raw = window.localStorage.getItem("guest_msg_count") || "0";
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  }, [session?.user, hydrated]);
+  const guestBlocked = hydrated && !session?.user && guestCount >= 3;
+  const canSend = useMemo(() => input.trim().length > 0 && !loading && !guestBlocked, [input, loading, guestBlocked]);
 
   // Load available models from server
   useEffect(() => {
@@ -63,6 +84,39 @@ export default function HomePage() {
     };
   }, []);
 
+  // Load messages for conversation from URL (?c=ID) on page load/switch
+  useEffect(() => {
+    const c = searchParams.get("c");
+    const id = c ? Number(c) : null;
+    // If we are actively streaming and just updated the URL ourselves, or currently loading, skip reacting to URL changes
+    if (suppressUrlLoadRef.current || loading) return;
+    // If there is a valid id and it's different, load it (do not clear immediately to avoid flicker)
+    if (id && id !== conversationId) {
+      setConversationId(id);
+      (async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/v1/conversations/${id}/messages`);
+          if (!res.ok) return;
+          const data = await res.json();
+          // API returns newest first; reverse to chronological
+          const ordered = (Array.isArray(data) ? data.slice().reverse() : []).map((m: any) => ({
+            role: m.role as Message["role"],
+            content: m.content as string,
+          }));
+          setMessages(ordered);
+        } catch {
+          // ignore fetch errors for now
+        }
+      })();
+      return;
+    }
+    // If URL has no conversation id, prepare for a fresh chat
+    if (!id && conversationId !== null) {
+      setConversationId(null);
+      setMessages([]);
+    }
+  }, [searchParams, conversationId, loading]);
+
   // Auto scroll to bottom when messages update
   useEffect(() => {
     // Use smooth scroll only after initial render
@@ -70,6 +124,12 @@ export default function HomePage() {
   }, [messages]);
 
   const handleSend = useCallback(async () => {
+    if (!session?.user && guestBlocked) {
+      if (typeof window !== "undefined") {
+        window.alert("You've reached the message limit. Login to get a higher limit (it's free).");
+      }
+      return;
+    }
     if (!canSend) return;
     const userMsg: Message = { role: "user", content: input };
     setMessages((prev) => [...prev, userMsg, { role: "assistant", content: "" }]);
@@ -84,11 +144,11 @@ export default function HomePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          conversationId: null,
+          conversationId,
           model: selectedModel,
           messages: [...messages, userMsg],
           temperature: 0.7,
-          maxTokens: 256,
+          maxTokens: 128,
         }),
         signal: controller.signal,
       });
@@ -112,6 +172,23 @@ export default function HomePage() {
           if (!data) continue;
           try {
             const obj = JSON.parse(data);
+            // Capture meta conversationId once
+            if (obj.meta?.conversationId && conversationId == null) {
+              const newId = Number(obj.meta.conversationId);
+              setConversationId(newId);
+              // Sync URL (?c=ID) so reloading preserves context, but suppress history load during active stream
+              try {
+                suppressUrlLoadRef.current = true;
+                const params = new URLSearchParams(Array.from(searchParams.entries()));
+                params.set("c", String(newId));
+                router.replace(`/?${params.toString()}`);
+                // Notify sidebar to refresh conversation list immediately
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(new CustomEvent("conversations:refresh"));
+                }
+              } catch {}
+              continue;
+            }
             if (obj.content) {
               // Ignore server-emitted meta tag like: [model: provider/model]
               if (typeof obj.content === "string" && obj.content.startsWith("[model:")) {
@@ -142,8 +219,23 @@ export default function HomePage() {
       ]);
     } finally {
       setLoading(false);
+      // Re-enable URL-driven history loads after stream ends
+      suppressUrlLoadRef.current = false;
+      // Ask sidebar to refresh after message persisted
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("conversations:refresh"));
+        // Increment guest count only when not logged in and after we attempted a send
+        if (!session?.user) {
+          try {
+            const raw = window.localStorage.getItem("guest_msg_count") || "0";
+            const n = Number(raw);
+            const next = (Number.isFinite(n) ? n : 0) + 1;
+            window.localStorage.setItem("guest_msg_count", String(next));
+          } catch {}
+        }
+      }
     }
-  }, [API_BASE, canSend, input, messages, selectedModel]);
+  }, [API_BASE, canSend, input, messages, selectedModel, conversationId, router, searchParams, guestBlocked, session?.user]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -236,6 +328,12 @@ export default function HomePage() {
       </div>
 
       {/* Sticky Composer (bottom) */}
+      {(() => {
+        const composerDisabled = hydrated ? guestBlocked : false;
+        const composerMsg = hydrated && guestBlocked
+          ? "You've reached the message limit. Login to get a higher limit (it's free)."
+          : undefined;
+        return (
       <Composer
         value={input}
         onChange={setInput}
@@ -245,7 +343,11 @@ export default function HomePage() {
         models={models}
         selectedModel={selectedModel}
         setSelectedModel={setSelectedModel}
+        disabled={composerDisabled}
+        disabledMessage={composerMsg}
       />
+        );
+      })()}
     </div>
   );
 }

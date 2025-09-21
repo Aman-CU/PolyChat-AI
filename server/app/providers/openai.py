@@ -48,7 +48,7 @@ class OpenAIProvider:
         last_error: Exception | None = None
         for attempt in range(1, max_attempts + 1):
             try:
-                timeout = httpx.Timeout(connect=10.0, read=60.0, write=30.0, pool=10.0)
+                timeout = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
                 async with httpx.AsyncClient(timeout=timeout, trust_env=True) as client:
                     async with client.stream(
                         "POST",

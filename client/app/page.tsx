@@ -39,14 +39,27 @@ export default function HomePage() {
     setHydrated(true);
   }, []);
 
-  // Guest message limit (3 messages) enforcement
-  const guestCount = useMemo(() => {
-    if (!hydrated || typeof window === "undefined") return 0;
+  // Reactive guest limit counter synced with localStorage
+  const [guestCountState, setGuestCountState] = useState(0);
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return;
     const raw = window.localStorage.getItem("guest_msg_count") || "0";
     const n = Number(raw);
-    return Number.isFinite(n) ? n : 0;
-  }, [session?.user, hydrated]);
-  const guestBlocked = hydrated && !session?.user && guestCount >= 3;
+    setGuestCountState(Number.isFinite(n) ? n : 0);
+    // Optional cross-tab sync
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "guest_msg_count") {
+        const val = Number(e.newValue || "0");
+        setGuestCountState(Number.isFinite(val) ? val : 0);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [hydrated]);
+
+  // Guest message limit (3 messages) enforcement
+  const guestCount = guestCountState;
+  const guestBlocked = hydrated && !session?.user && guestCountState >= 3;
   const canSend = useMemo(() => input.trim().length > 0 && !loading && !guestBlocked, [input, loading, guestBlocked]);
 
   // Load available models from server
@@ -54,7 +67,7 @@ export default function HomePage() {
     let active = true;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/v1/models`);
+        const res = await fetch(`/api/proxy/api/v1/models`);
         if (!res.ok) return;
         const data = await res.json();
         if (!active) return;
@@ -95,7 +108,7 @@ export default function HomePage() {
       setConversationId(id);
       (async () => {
         try {
-          const res = await fetch(`${API_BASE}/api/v1/conversations/${id}/messages`);
+          const res = await fetch(`/api/proxy/api/v1/conversations/${id}/messages`);
           if (!res.ok) return;
           const data = await res.json();
           // API returns newest first; reverse to chronological
@@ -140,7 +153,7 @@ export default function HomePage() {
     abortRef.current = controller;
 
     try {
-      const res = await fetch(`${API_BASE}/api/v1/chat/stream`, {
+      const res = await fetch(`/api/proxy/api/v1/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -227,15 +240,14 @@ export default function HomePage() {
         // Increment guest count only when not logged in and after we attempted a send
         if (!session?.user) {
           try {
-            const raw = window.localStorage.getItem("guest_msg_count") || "0";
-            const n = Number(raw);
-            const next = (Number.isFinite(n) ? n : 0) + 1;
+            const next = guestCountState + 1;
             window.localStorage.setItem("guest_msg_count", String(next));
+            setGuestCountState(next);
           } catch {}
         }
       }
     }
-  }, [API_BASE, canSend, input, messages, selectedModel, conversationId, router, searchParams, guestBlocked, session?.user]);
+  }, [API_BASE, canSend, input, messages, selectedModel, conversationId, router, searchParams, guestBlocked, session?.user, guestCountState]);
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();

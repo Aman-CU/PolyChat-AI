@@ -11,7 +11,8 @@ import { useSession, signIn, signOut } from "next-auth/react";
 type Conversation = {
   id: number;
   title: string;
-  updated_at?: string;
+  updated_at?: string; // server UTC timestamp
+  owner_id?: string | null;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
@@ -36,7 +37,7 @@ export default function Sidebar() {
     const fetchConversations = async (showLoading: boolean = false) => {
       try {
         if (showLoading) setLoading(true);
-        const res = await fetch(`${API_BASE}/api/v1/conversations`);
+        const res = await fetch(`/api/proxy/api/v1/conversations`);
         if (!res.ok) return;
         const data = await res.json();
         if (!alive) return;
@@ -79,6 +80,26 @@ export default function Sidebar() {
     };
   }, []);
 
+  // When auth state changes (login/logout), refresh conversations to reflect ownership
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("conversations:refresh"));
+    }
+  }, [session?.user]);
+
+  // Safe UTC -> local formatter. If timestamp lacks timezone, assume Z (UTC)
+  const formatTimestamp = (ts?: string) => {
+    if (!ts) return "";
+    try {
+      const hasTZ = /[zZ]|[\+\-]\d{2}:?\d{2}$/.test(ts);
+      const d = new Date(hasTZ ? ts : ts + "Z");
+      if (isNaN(d.getTime())) return "";
+      return new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "medium" }).format(d);
+    } catch {
+      return "";
+    }
+  };
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const list = conversations.slice().sort((a, b) => {
@@ -117,7 +138,7 @@ export default function Sidebar() {
     if (!editingTitle.trim()) return cancelRename();
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/api/v1/conversations/${id}?title=${encodeURIComponent(editingTitle.trim())}`, {
+      const res = await fetch(`/api/proxy/api/v1/conversations/${id}?title=${encodeURIComponent(editingTitle.trim())}`, {
         method: "PATCH",
       });
       if (!res.ok) return;
@@ -134,7 +155,7 @@ export default function Sidebar() {
     if (!ok) return;
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/api/v1/conversations/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/proxy/api/v1/conversations/${id}`, { method: "DELETE" });
       if (!res.ok) return;
       setConversations((prev) => prev.filter((c) => c.id !== id));
       // If the deleted one is active, clear selection or pick the most recent remaining
@@ -209,7 +230,7 @@ export default function Sidebar() {
                     <button onClick={() => handleSelect(c.id)} className="flex-1 text-left min-w-0">
                       <div className="truncate text-sm text-foreground/90">{c.title}</div>
                       {c.updated_at ? (
-                        <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{new Date(c.updated_at).toLocaleString()}</div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{formatTimestamp(c.updated_at)}</div>
                       ) : null}
                     </button>
                     {/* Right-side icon group with fixed width to prevent overflow */}

@@ -6,6 +6,7 @@ from app.schemas.chat import ChatRequest
 from app.providers.router import router as provider_router
 from fastapi import Request
 from app.core.ratelimit import enforce_rate_limit
+from app.core.auth import verify_nextauth_jwt, get_effective_owner
 from app.db.session import get_session
 from sqlmodel.ext.asyncio.session import AsyncSession
 from app.db.models import Conversation as ConversationModel, Message as MessageModel
@@ -32,7 +33,9 @@ async def stream_chat(request: ChatRequest, http_request: Request):
                 # Title from last user message snippet
                 last_user = next((m for m in reversed(request.messages) if m.role == "user"), None)
                 title = (last_user.content[:40] + "...") if last_user and last_user.content else "New Conversation"
-                conv = ConversationModel(title=title)
+                # Associate new conversation with effective owner (logged-in user or per-browser guest)
+                owner_id = get_effective_owner(http_request)
+                conv = ConversationModel(title=title, owner_id=owner_id)
                 session.add(conv)
                 await session.flush()
                 await session.refresh(conv)

@@ -24,6 +24,24 @@ def verify_nextauth_jwt(request: Request) -> Optional[AuthUser]:
     if jwt is None:
         return None
 
+
+def get_effective_owner(request: Request) -> Optional[str]:
+    """Resolve the owner key for this request.
+    Priority:
+    1) Authenticated user (NextAuth JWT) -> user.sub or user.email
+    2) Guest ID header 'x-guest-id' provided by the client proxy
+    3) None
+    """
+    user = verify_nextauth_jwt(request)
+    if user:
+        uid = user.get("sub") or user.get("email")
+        if uid:
+            return str(uid)
+    guest_id = request.headers.get("x-guest-id") or request.headers.get("X-Guest-Id")
+    if guest_id:
+        return str(guest_id)
+    return None
+
     auth = request.headers.get("authorization") or request.headers.get("Authorization")
     if not auth or not auth.lower().startswith("bearer "):
         return None

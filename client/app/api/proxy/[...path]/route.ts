@@ -14,8 +14,9 @@ async function handler(
   // Clone request init
   const headers: Record<string, string> = {};
   req.headers.forEach((v, k) => {
-    // skip host-related headers that don't make sense cross-origin
-    if (["host", "connection"].includes(k.toLowerCase())) return;
+    const key = k.toLowerCase();
+    // skip hop-by-hop and compression negotiation; let fetch decide
+    if (["host", "connection", "accept-encoding"].includes(key)) return;
     headers[k] = v;
   });
 
@@ -46,7 +47,12 @@ async function handler(
   });
 
   const responseHeaders = new Headers();
-  res.headers.forEach((v, k) => responseHeaders.set(k, v));
+  res.headers.forEach((v, k) => {
+    const key = k.toLowerCase();
+    // avoid forwarding compression/transfer headers that can cause decoding issues
+    if (["content-encoding", "transfer-encoding", "content-length"].includes(key)) return;
+    responseHeaders.set(k, v);
+  });
 
   const response = new NextResponse(res.body, {
     status: res.status,

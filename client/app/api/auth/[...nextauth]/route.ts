@@ -8,7 +8,7 @@ import Google from "next-auth/providers/google";
 // - GOOGLE_CLIENT_ID
 // - GOOGLE_CLIENT_SECRET
 
-export const authOptions = {
+const authOptions = {
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,

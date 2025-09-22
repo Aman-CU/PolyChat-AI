@@ -19,6 +19,8 @@ async function handler(
     if (["host", "connection", "accept-encoding"].includes(key)) return;
     headers[k] = v;
   });
+  // Explicitly request identity encoding to avoid compressed payload issues on some platforms
+  headers["accept-encoding"] = "identity";
 
   // Attach NextAuth raw JWT if present
   try {
@@ -37,10 +39,11 @@ async function handler(
   }
   if (guestId) headers["x-guest-id"] = guestId;
 
+  const isHead = req.method === "HEAD";
   const body = ["GET", "HEAD"].includes(req.method) ? undefined : await req.text();
 
   const res = await fetch(url, {
-    method: req.method,
+    method: isHead ? "GET" : req.method,
     headers,
     body,
     redirect: "manual",
@@ -54,10 +57,18 @@ async function handler(
     responseHeaders.set(k, v);
   });
 
-  const response = new NextResponse(res.body, {
-    status: res.status,
-    headers: responseHeaders,
-  });
+  // If SSE, stream body directly; otherwise buffer to avoid decoding mismatch
+  const ct = res.headers.get("content-type") || "";
+  let response: NextResponse;
+  if (isHead) {
+    // For HEAD, return headers only (no body)
+    response = new NextResponse(null, { status: res.status, headers: responseHeaders });
+  } else if (ct.includes("text/event-stream")) {
+    response = new NextResponse(res.body, { status: res.status, headers: responseHeaders });
+  } else {
+    const buf = await res.arrayBuffer();
+    response = new NextResponse(buf, { status: res.status, headers: responseHeaders });
+  }
   // Persist guest_id cookie (httpOnly false so browser tools can inspect if needed; adjust as desired)
   if (guestId && !req.cookies.get("guest_id")?.value) {
     response.cookies.set("guest_id", guestId, {
@@ -77,3 +88,4 @@ export const PUT = handler;
 export const PATCH = handler;
 export const DELETE = handler;
 export const OPTIONS = handler;
+export const HEAD = handler;

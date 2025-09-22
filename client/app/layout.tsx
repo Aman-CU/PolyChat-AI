@@ -10,6 +10,9 @@ export const metadata: Metadata = {
   title: "PolyChat AI",
 };
 
+// Opt out of static prerendering. This app uses auth/session and client-only behavior.
+export const dynamic = "force-dynamic";
+
 const inter = Inter({ subsets: ["latin"] });
 
 export default function RootLayout({ children }: { children: ReactNode }) {
